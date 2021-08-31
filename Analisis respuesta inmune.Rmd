@@ -23,6 +23,7 @@ library(ggrepel)
 library(scales)
 library(ggdist)
 library(flextable)
+library(gtsummary)
 ```
 
 ```{r, lectura y gestion de variables}
@@ -55,7 +56,7 @@ datos <- datos %>% select(ID, HOGAR, Lugar, SEXO, Edad_calculada, GrupoEdad, Vac
                           Motivo_fin_seguimiento)                  
 ```
 
-## Completitud de datos
+### Completitud de datos
 
 ```{r, out.width="80%", fig.align="center"}
 datos %>% select(-Fecha_obito, -OBITO, -Motivo_fin_seguimiento,-Tipo_diagnostico,
@@ -65,9 +66,9 @@ plot_na_pareto()
 **Nota:** Se excluyeron variables con observaciones vacías esperables (Fecha_obito, OBITO, Motivo_fin_seguimiento, Tipo_diagnostico, FECHA_HISOPADO, COVID_durante_estudi)
 
 
-## Descripción univariada 
+### Descripción univariada 
 
-### Variables cuantitativas
+#### Variables cuantitativas
 
 ```{r}
 datos %>% select(where(is.numeric)) %>% 
@@ -80,7 +81,7 @@ datos %>% select(where(is.numeric)) %>%
   autofit()
 ```
 
-### Variables cualitativas
+#### Variables cualitativas
 
 ```{r, ft.align="left"}
 datos %>% tabyl(Lugar) %>% 
@@ -107,7 +108,8 @@ datos %>% tabyl(OBITO) %>%
   adorn_pct_formatting(digits = 1)  %>% 
   flextable() %>% autofit()
 
-datos %>% tabyl(Motivo_fin_seguimiento) %>% 
+datos %>% mutate(Motivo_fin_seguimiento = if_else(Motivo_fin_seguimiento == "Obito", "Óbito", Motivo_fin_seguimiento)) %>% 
+  tabyl(Motivo_fin_seguimiento) %>% 
   adorn_pct_formatting(digits = 1)  %>% 
   flextable() %>% autofit()
 ```
@@ -115,7 +117,7 @@ datos %>% tabyl(Motivo_fin_seguimiento) %>%
 
 
 ```{r}
-datos_largo <- datos %>% select(ID, SEXO, Edad_calculada, Vacuna, ANT_COVID, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
+datos_largo <- datos %>% select(ID, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
   pivot_longer(cols = c("baseline", starts_with("after")), names_to = "momento", values_to = "titulo") %>% 
   mutate(titulo_cuali = if_else(titulo == 0, "NR", "R"),
          momento = factor(momento, levels = c("baseline", "after_dosis1", "after_dosis2")))
@@ -124,15 +126,47 @@ excluir <- datos_largo %>% filter(is.na(titulo)) %>% select(ID)
 
 datos_largo1 <- datos_largo %>% anti_join(excluir)
 
-datos1 <- datos %>% anti_join(excluir)
+datos1 <- datos %>% anti_join(excluir) %>% 
+           mutate(ANT_COVID2 = if_else(ANT_COVID == "NO" & baseline > 0, "SI", ANT_COVID))
+
 
 datos_largo1 <- datos_largo1 %>% mutate(ID = factor(ID), 
                                       momento = factor(momento))
 
-datos_largo1 <- as.data.frame(datos_largo1) %>% arrange(momento, ID)
+datos_largo1 <- as.data.frame(datos_largo1) %>% arrange(momento, ID) %>% 
+                mutate(ANT_COVID2 = if_else(ANT_COVID == "NO" & momento == "baseline" & titulo > 0, "SI", ANT_COVID))
 ```
 
-## Gráficos
+### Tabla univariado (linea de base)
+
+```{r}
+theme_gtsummary_language(language = "es", decimal.mark = ",") 
+theme_gtsummary_compact()
+
+datos1 %>% tbl_summary(by = SEXO, 
+                       missing = "no",
+                       label = list(Edad_calculada ~ "Edad",
+                                    GrupoEdad ~ "Edad (agrupada)",
+                                    ANT_COVID ~ "Antecedente de Covid-19"),
+                       include = c(SEXO, Edad_calculada, GrupoEdad, Vacuna, ANT_COVID, Lugar), digits = list(all_continuous() ~ c(0,1), all_categorical() ~ c(0,1))
+                        ) %>% 
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Sexo**") %>%
+  add_n() %>% 
+ # add_p(pvalue_fun = ~style_pvalue(.x, digits = 2)) %>% 
+  bold_labels() %>% 
+  #as_gt %>% 
+  #gt::cols_align(align = "right", columns = vars("stat_1", "stat_2")) %>% 
+  as_flex_table() %>% 
+  flextable::align(j = 3:4,align = "right") %>% 
+  flextable::autofit()
+```
+
+
+
+### Gráficos
+
+Los gráficos donde se comparan los títulos de anticuerpos en cada momento parten de observaciones completas para las extracciones de base y posteriores a cada dosis de vacuna (n = 658).
 
 ```{r, out.width="80%", fig.align="center"}
 
@@ -176,11 +210,63 @@ datos_largo1 %>%
     guide = guide_prism_bracket(width = 0.20), 
     labels = scales::wrap_format(5)
   ) +
-  labs(title = paste0("Niveles de anticuerpos contra el SARS-CoV-2 \n de participantes según momentos ","(n = ",length(datos_largo$titulo[datos_largo$momento=="baseline"]),")"),
+  labs(title = paste0("Niveles de anticuerpos contra el SARS-CoV-2 \n de participantes según momentos ","(n = ",length(datos_largo1$titulo[datos_largo1$momento=="baseline"]),")"),
        caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
   #add_pvalue(df_p_val) 
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.1) +
+  theme(plot.caption = element_text(hjust = 0))
+```
+
+```{r, out.width="90%", fig.align="center"}
+
+med <- datos_largo1 %>% filter(!is.na(Lugar)) %>%
+  group_by(Lugar, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+conteo <- datos1 %>% filter(!is.na(Lugar)) %>% count(Lugar)
+
+lugar_etiq <- c(
+                    `LA PLATA/LANUS` = paste0("La Plata-Lanus\n(n = ",conteo[1,2],")"),
+                    `MDP` = paste0("MdP\n(n = ",conteo[2,2],")")
+                    )
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(Lugar)) %>% 
+  group_by(Lugar) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T)
+
+datos_largo1 %>% filter(!is.na(Lugar)) %>%   
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin() +
+  geom_jitter(aes(color = Lugar), size = 2, width=0.1, height=0.8, alpha=0.3) +
+  stat_summary(fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred") +
+ geom_label(data = med, aes(x = momento, y = titulo, label = titulo), nudge_x = 0.05, hjust = 0, size = 3) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600)) +
+  scale_color_manual(values = c("sienna1", "aquamarine3")) +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según lugar",
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
+  facet_grid(.~Lugar, labeller = as_labeller(lugar_etiq)) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
+                     tip.length = 0.01, step.increase = 0.05,
+                     size = 3) +
+  guides(color = "none")  +
   theme(plot.caption = element_text(hjust = 0))
 ```
 
@@ -406,6 +492,7 @@ stat.test <- datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
   add_x_position(x = "momento", dodge = 0.9) %>% 
   add_significance("p")
 
+conteo <- datos1 %>% filter(!is.na(ANT_COVID2)) %>% count(ANT_COVID)
 
 datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%   
   ggplot(aes(x = momento, y = titulo)) +
@@ -419,7 +506,9 @@ datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
                geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
                      breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
-  scale_color_manual(values = c("salmon3", "slateblue4"), name = "Antecedente\nCOVID-19") +
+  scale_color_manual(values = c("salmon2", "slateblue3"), name = "Antecedente\nCOVID-19",
+                     labels=c(paste0("No\n(n=", conteo[1,2],")"),
+                              paste0("Si\n(n=", conteo[2,2],")"))) +
   geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = ANT_COVID), position = position_dodge(width = 0.9),
              size = 3)  +
   xlab("") + 
@@ -442,6 +531,62 @@ datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
   theme(plot.caption = element_text(hjust = 0))
 ```
 
+
+
+```{r, out.width="90%", fig.align="center"}
+
+med <- datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>%
+  group_by(ANT_COVID2, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ ANT_COVID2, paired = F) %>% 
+  add_x_position(x = "momento", dodge = 0.9) %>% 
+  add_significance("p")
+
+conteo <- datos1 %>% filter(!is.na(ANT_COVID2)) %>% count(ANT_COVID2)
+
+datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>%   
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin(aes(color = ANT_COVID2)) +
+  geom_jitter(aes(color = ANT_COVID2), position = position_jitterdodge(jitter.width = 0.3, 
+                                                                      jitter.height = 0.6,
+                                                                      dodge.width = 0.9), size = 2, alpha=0.3) +
+  stat_summary(aes(group = ANT_COVID2), fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
+  scale_color_manual(values = c("salmon2", "slateblue3"), name = "Antecedente\nCOVID-19",
+                     labels=c(paste0("No\n(n=", conteo[1,2],")"),
+                              paste0("Si\n(n=", conteo[2,2],")"))) +
+  geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = ANT_COVID2), position = position_dodge(width = 0.9),
+             size = 3)  +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  theme(legend.title = element_text()) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según antecedentes de COVID-19 basado en serologia", 
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+  stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
+                     size = 3.5) +
+  theme(plot.caption = element_text(hjust = 0))
+```
+
+
+
 ```{r, out.width="90%", fig.align="center"}
 
 med <- datos_largo1 %>% filter(!is.na(SEXO)) %>%
@@ -455,6 +600,7 @@ stat.test <- datos_largo1 %>% filter(!is.na(SEXO)) %>%
   add_x_position(x = "momento", dodge = 0.9) %>% 
   add_significance("p")
 
+conteo <- datos1 %>% filter(!is.na(SEXO)) %>% count(SEXO)
 
 datos_largo1 %>% filter(!is.na(SEXO)) %>% 
   mutate(SEXO = if_else(SEXO == "Femenino", "Mujer", "Varón")) %>% 
@@ -469,7 +615,9 @@ datos_largo1 %>% filter(!is.na(SEXO)) %>%
                geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
                      breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
-  scale_color_manual(values = c("tan4", "darkorange"), name = "SEXO") +
+  scale_color_manual(values = c("tan4", "darkorange"), name = "SEXO",
+                     labels=c(paste0("Mujer\n(n=", conteo[1,2],")"),
+                              paste0("Varón\n(n=", conteo[2,2],")"))) +
   geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = SEXO), position = position_dodge(width = 0.9),
              size = 3)  +
   xlab("") + 
@@ -509,6 +657,7 @@ stat.test <- datos_largo1 %>% filter(!is.na(Vacuna)) %>%
   add_x_position(x = "momento", dodge = 0.9) %>% 
   add_significance("p")
 
+conteo <- datos1 %>% filter(!is.na(Vacuna)) %>% count(Vacuna)
 
 datos_largo1 %>% filter(!is.na(Vacuna)) %>%   
   mutate(Vacuna = factor(Vacuna, levels = c("Sinopharm", "Oxford-Astra Zeneca", "Sputnik-V"))) %>% 
@@ -523,7 +672,10 @@ datos_largo1 %>% filter(!is.na(Vacuna)) %>%
                geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
                      breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
-  scale_color_manual(values = c("forestgreen", "dodgerblue4", "darkorchid4"), name = "Vacuna") +
+  scale_color_manual(values = c("forestgreen", "dodgerblue4", "darkorchid4"), name = "Vacuna",
+                     labels=c(paste0("Sinopharm\n(n=", conteo[1,2],")"),
+                              paste0("O-Astra Zeneca\n(n=", conteo[2,2],")"),
+                              paste0("Sputnik-V\n(n=", conteo[3,2],")"))) +
   geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = Vacuna), position = position_dodge(width = 0.9),
              size = 3)  +
   xlab("") + 
@@ -561,6 +713,8 @@ stat.test <- datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
   add_x_position(x = "momento", dodge = 0.9) %>% 
   add_significance("p")
 
+conteo <- datos1 %>% filter(!is.na(GrupoEdad)) %>% count(GrupoEdad)
+
 
 datos_largo1 %>% filter(!is.na(GrupoEdad)) %>% 
   ggplot(aes(x = momento, y = titulo)) +
@@ -574,7 +728,9 @@ datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
                geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
                      breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
-  scale_color_manual(values = c("brown1", "dodgerblue"), name = "Grupo etario") +
+  scale_color_manual(values = c("brown1", "dodgerblue"), name = "Grupo etario",
+                     labels=c(paste0("< 80 años\n(n=", conteo[1,2],")"),
+                              paste0(">= 80 años\n(n=", conteo[2,2],")"))) +
   geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = GrupoEdad), position = position_dodge(width = 0.9),
              size = 3)  +
   xlab("") + 
