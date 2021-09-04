@@ -10,7 +10,6 @@ knitr::opts_chunk$set(echo = F, message=F, warning=F)
 ```
 
 ```{r, librerias}
-library(tidyverse)
 library(readxl)
 library(lubridate)
 library(skimr)
@@ -24,12 +23,13 @@ library(scales)
 library(ggdist)
 library(flextable)
 library(gtsummary)
+library(tidyverse)
 ```
 
 ```{r, lectura y gestion de variables}
 datos <- read_excel("Relevamiento de datos.xlsx", sheet = 2, col_types = c(rep("guess",11), "date", rep("guess", 19), "date", rep("guess", 12)))
 
-datos <- datos %>% mutate(Lugar = if_else(str_detect(ID, pattern = "^A"), "MDP", "LA PLATA/LANUS"),
+datos <- datos %>% mutate(Lugar = if_else(str_detect(Id, pattern = "^A"), "MDP", "LA PLATA/LANUS"),
                   Edad_calculada = if_else(Lugar == "MDP", interval(Fecha_nacimiento, Fecha_muestra_0)%/%dyears(),Edad),
                  baseline = case_when(
                    Título_0 == "NR" ~ 0,
@@ -49,95 +49,152 @@ datos <- datos %>% mutate(Lugar = if_else(str_detect(ID, pattern = "^A"), "MDP",
                  ANT_COVID = str_to_upper(ANT_COVID),
                  Vacuna = if_else(Vacuna == "Sputnik V", "Sputnik-V", Vacuna))
 
-datos <- datos %>% select(ID, HOGAR, Lugar, SEXO, Edad_calculada, GrupoEdad, Vacuna, ANT_COVID,
+datos <- datos %>% dplyr::select(Id, HOGAR, Lugar, SEXO, Edad_calculada, GrupoEdad, Vacuna, ANT_COVID,
                           FECHA_HISOPADO, Tipo_diagnostico, COVID_durante_estudi, OBITO, Fecha_obito,
                           Fecha_1r_dosis, Fecha_2da_dosis, Fecha_muestra_0, baseline,
                           Fecha_muestra_21, after_dosis1, Fecha_muestra_42, after_dosis2,
                           Motivo_fin_seguimiento)                  
 ```
 
+### Exploración de datos y avance preliminar de análisis con gráficos (en construcción)
+
+
 ### Completitud de datos
 
-```{r, out.width="80%", fig.align="center"}
-datos %>% select(-Fecha_obito, -OBITO, -Motivo_fin_seguimiento,-Tipo_diagnostico,
-                 -FECHA_HISOPADO, -COVID_durante_estudi) %>% 
-plot_na_pareto()
+
+```{r, out.width="100%", fig.align="center"}
+datos %>%
+  filter(Lugar == "MDP") %>% 
+  dplyr::select(-Fecha_obito, -OBITO, -Motivo_fin_seguimiento,-Tipo_diagnostico,
+                 -FECHA_HISOPADO, -COVID_durante_estudi, -Id, -Lugar) %>% 
+  plot_na_pareto(main = "Datos faltantes Mar del Plata", )
+
+datos %>%
+  filter(Lugar == "LA PLATA/LANUS") %>% 
+  dplyr::select(-Fecha_obito, -OBITO, -Motivo_fin_seguimiento,-Tipo_diagnostico,
+                 -FECHA_HISOPADO, -COVID_durante_estudi, -Id, -Lugar) %>% 
+  plot_na_pareto(main = "Datos faltantes LA PLATA/LANUS")
 ```
 **Nota:** Se excluyeron variables con observaciones vacías esperables (Fecha_obito, OBITO, Motivo_fin_seguimiento, Tipo_diagnostico, FECHA_HISOPADO, COVID_durante_estudi)
 
 
 ### Descripción univariada 
 
-#### Variables cuantitativas
+#### Variables cuantitativas segun Lugar
+
+**Participantes MDP**
 
 ```{r}
-datos %>% select(where(is.numeric)) %>% 
+datos %>%  filter(Lugar == "MDP") %>%  
+  dplyr::select(where(is.numeric)) %>% 
+   skim_without_charts() %>% 
+  mutate(complete_rate = round(complete_rate, 2),
+         numeric.mean = round(numeric.mean, 2),
+         numeric.sd = round(numeric.sd, 2)) %>% 
+  dplyr::select(-skim_type) %>% 
+  flextable() %>%
+  autofit()
+```
+
+**Participantes La Plata/Lanus**
+
+```{r}
+datos %>%  filter(Lugar == "LA PLATA/LANUS") %>% 
+  dplyr::select(where(is.numeric)) %>% 
   skim_without_charts() %>% 
   mutate(complete_rate = round(complete_rate, 2),
          numeric.mean = round(numeric.mean, 2),
          numeric.sd = round(numeric.sd, 2)) %>% 
-  select(-skim_type) %>% 
-  flextable() %>% 
+  dplyr::select(-skim_type) %>% 
+  flextable() %>%
   autofit()
 ```
 
-#### Variables cualitativas
+#### Variables cualitativas según Lugar
 
 ```{r, ft.align="left"}
 datos %>% tabyl(Lugar) %>% 
   adorn_pct_formatting(digits = 1) %>% 
   flextable() %>% autofit()
 
-datos %>% tabyl(SEXO) %>% 
-  adorn_pct_formatting(digits = 1) %>% 
-  flextable() %>% autofit()
-
-datos %>% tabyl(GrupoEdad) %>% 
-  adorn_pct_formatting(digits = 1) %>% 
-  flextable() %>% autofit()
-
-datos %>% tabyl(Vacuna) %>% 
-  adorn_pct_formatting(digits = 1) %>% 
-  flextable() %>% autofit()
-
-datos %>% tabyl(ANT_COVID) %>% 
+datos %>% tabyl(SEXO, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
   adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
   flextable() %>% autofit()
 
-datos %>% tabyl(OBITO) %>% 
+datos %>% tabyl(GrupoEdad, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
   adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
+  flextable() %>% autofit()
+
+datos %>% tabyl(Vacuna, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
+  adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
+  flextable() %>% autofit()
+
+datos %>% tabyl(ANT_COVID, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
+  adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
   flextable() %>% autofit()
 
 datos %>% mutate(Motivo_fin_seguimiento = if_else(Motivo_fin_seguimiento == "Obito", "Óbito", Motivo_fin_seguimiento)) %>% 
-  tabyl(Motivo_fin_seguimiento) %>% 
+  tabyl(Motivo_fin_seguimiento, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
   adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
+  flextable() %>% autofit()
+
+datos %>% mutate(baseline = if_else(baseline > 0, "Con anticuerpos", "Sin anticuerpos")) %>% 
+   tabyl(baseline, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
+  adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
+  flextable() %>% autofit()
+
+datos %>% mutate(after_dosis1 = if_else(after_dosis1 > 0, "Con anticuerpos", "Sin anticuerpos")) %>% 
+   tabyl(after_dosis1, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
+  adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
+  flextable() %>% autofit()
+
+datos %>% mutate(after_dosis2 = if_else(after_dosis2 > 0, "Con anticuerpos", "Sin anticuerpos")) %>% 
+   tabyl(after_dosis2, Lugar) %>% 
+  adorn_percentages(denominator = "col") %>% 
+  adorn_pct_formatting(digits = 1)  %>% 
+  adorn_ns() %>%
   flextable() %>% autofit()
 ```
 
 
 
 ```{r}
-datos_largo <- datos %>% select(ID, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
+datos_largo <- datos %>% dplyr::select(Id, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
   pivot_longer(cols = c("baseline", starts_with("after")), names_to = "momento", values_to = "titulo") %>% 
   mutate(titulo_cuali = if_else(titulo == 0, "NR", "R"),
          momento = factor(momento, levels = c("baseline", "after_dosis1", "after_dosis2")))
 
-excluir <- datos_largo %>% filter(is.na(titulo)) %>% select(ID)
-
-datos_largo1 <- datos_largo %>% anti_join(excluir)
+excluir <- datos_largo %>% filter(is.na(titulo)) %>% dplyr::select(Id)
 
 datos1 <- datos %>% anti_join(excluir) %>% 
            mutate(ANT_COVID2 = if_else(ANT_COVID == "NO" & baseline > 0, "SI", ANT_COVID))
 
+datos_largo1 <- datos1 %>% dplyr::select(Id, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, ANT_COVID2, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
+  pivot_longer(cols = c("baseline", starts_with("after")), names_to = "momento", values_to = "titulo") %>% 
+  mutate(titulo_cuali = if_else(titulo == 0, "NR", "R"),
+         momento = factor(momento, levels = c("baseline", "after_dosis1", "after_dosis2")))
 
-datos_largo1 <- datos_largo1 %>% mutate(ID = factor(ID), 
-                                      momento = factor(momento))
+datos_largo1 <- datos_largo1 %>% mutate(ID = factor(Id), 
+                                      momento = factor(momento)) %>% select(-Id)
 
-datos_largo1 <- as.data.frame(datos_largo1) %>% arrange(momento, ID) %>% 
-                mutate(ANT_COVID2 = if_else(ANT_COVID == "NO" & momento == "baseline" & titulo > 0, "SI", ANT_COVID))
+datos_largo1 <- as.data.frame(datos_largo1) %>% arrange(momento, ID) 
 ```
 
-### Tabla univariado (linea de base)
+### Tabla univariado (linea de base) según sexo
 
 ```{r}
 theme_gtsummary_language(language = "es", decimal.mark = ",") 
@@ -166,7 +223,7 @@ datos1 %>% tbl_summary(by = SEXO,
 
 ### Gráficos
 
-Los gráficos donde se comparan los títulos de anticuerpos en cada momento parten de observaciones completas para las extracciones de base y posteriores a cada dosis de vacuna (n = 658).
+Los gráficos donde se comparan los títulos de anticuerpos en cada momento parten de observaciones completas para las extracciones de base y posteriores a cada dosis de vacuna (n = `r length(datos_largo1$titulo[datos_largo1$momento=="baseline"])`).
 
 ```{r, out.width="80%", fig.align="center"}
 
@@ -211,7 +268,7 @@ datos_largo1 %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = paste0("Niveles de anticuerpos contra el SARS-CoV-2 \n de participantes según momentos ","(n = ",length(datos_largo1$titulo[datos_largo1$momento=="baseline"]),")"),
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   #add_pvalue(df_p_val) 
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.1) +
@@ -261,7 +318,7 @@ datos_largo1 %>% filter(!is.na(Lugar)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según lugar",
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   facet_grid(.~Lugar, labeller = as_labeller(lugar_etiq)) +
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.05,
@@ -313,8 +370,60 @@ datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según antecedentes de COVID-19",
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   facet_grid(.~ANT_COVID, labeller = as_labeller(antcovid_etiq)) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
+                     tip.length = 0.01, step.increase = 0.05,
+                     size = 3) +
+  guides(color = "none")  +
+  theme(plot.caption = element_text(hjust = 0))
+```
+
+```{r, out.width="90%", fig.align="center"}
+
+med <- datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>%
+  group_by(ANT_COVID2, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+conteo <- datos1 %>% filter(!is.na(ANT_COVID2)) %>% count(ANT_COVID2)
+
+antcovid_etiq <- c(
+                    `NO` = paste0("NO\n(n = ",conteo[1,2],")"),
+                    `SI` = paste0("SI\n(n = ",conteo[2,2],")")
+                    )
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(ANT_COVID)) %>% 
+  group_by(ANT_COVID2) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T)
+
+datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>%   
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin() +
+  geom_jitter(aes(color = ANT_COVID2), size = 2, width=0.1, height=0.8, alpha=0.3) +
+  stat_summary(fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred") +
+ geom_label(data = med, aes(x = momento, y = titulo, label = titulo), nudge_x = 0.05, hjust = 0, size = 3) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600)) +
+  scale_color_manual(values = c("royalblue", "mediumvioletred")) +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según antecedentes de COVID-19 basado en serología",
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  facet_grid(.~ANT_COVID2, labeller = as_labeller(antcovid_etiq)) +
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.05,
                      size = 3) +
@@ -365,7 +474,7 @@ datos_largo1 %>% filter(!is.na(SEXO)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según sexo", 
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   facet_grid(.~SEXO, labeller = as_labeller(sexo_etiq)) +
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400), 
                      tip.length = 0.01, step.increase = 0.05,
@@ -418,7 +527,7 @@ datos_largo1 %>% filter(!is.na(Vacuna)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según vacuna aplicada", 
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)")+
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   facet_grid(.~Vacuna, labeller = as_labeller(vacuna_etiq)) +
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.05,
@@ -470,7 +579,7 @@ datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \n en los distintos momentos según grupo etario",
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)")+
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   facet_grid(.~GrupoEdad, labeller = as_labeller(GEdad_etiq)) +
   stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
                      tip.length = 0.01, step.increase = 0.05,
@@ -478,6 +587,8 @@ datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
   guides(color = "none")  +
   theme(plot.caption = element_text(hjust = 0))
 ```
+
+**Comparaciones entre grupos para cada momento de muestra**
 
 ```{r, out.width="90%", fig.align="center"}
 
@@ -492,7 +603,7 @@ stat.test <- datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
   add_x_position(x = "momento", dodge = 0.9) %>% 
   add_significance("p")
 
-conteo <- datos1 %>% filter(!is.na(ANT_COVID2)) %>% count(ANT_COVID)
+conteo <- datos1 %>% filter(!is.na(ANT_COVID)) %>% count(ANT_COVID)
 
 datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%   
   ggplot(aes(x = momento, y = titulo)) +
@@ -525,13 +636,11 @@ datos_largo1 %>% filter(!is.na(ANT_COVID)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según antecedentes de COVID-19", 
-       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
 ```
-
-
 
 ```{r, out.width="90%", fig.align="center"}
 
@@ -579,12 +688,11 @@ datos_largo1 %>% filter(!is.na(ANT_COVID2)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según antecedentes de COVID-19 basado en serologia", 
-       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
 ```
-
 
 
 ```{r, out.width="90%", fig.align="center"}
@@ -634,13 +742,67 @@ datos_largo1 %>% filter(!is.na(SEXO)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según sexo", 
-       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
 ```
 
 
+```{r, out.width="90%", fig.align="center"}
+
+med <- datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO") %>%
+  group_by(SEXO, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO", momento != "baseline") %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ SEXO, paired = F) %>% 
+  add_x_position(x = "momento", dodge = 0.9) %>% 
+  add_significance("p")
+
+stat.test <-  bind_rows(data.frame(momento = "baseline", .y. = "titulo", x = 1, xmin = 0.775, xmax = 1.23, p.signif = "ns"), stat.test)
+
+conteo <- datos1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO") %>% count(SEXO)
+
+datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO") %>% 
+  mutate(SEXO = if_else(SEXO == "Femenino", "Mujer", "Varón")) %>% 
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin(aes(color = SEXO)) +
+  geom_jitter(aes(color = SEXO), position = position_jitterdodge(jitter.width = 0.3, 
+                                                                      jitter.height = 0.6,
+                                                                      dodge.width = 0.9), size = 2, alpha=0.3) +
+  stat_summary(aes(group = SEXO), fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
+  scale_color_manual(values = c("tan4", "darkorange"), name = "SEXO",
+                     labels=c(paste0("Mujer\n(n=", conteo[1,2],")"),
+                              paste0("Varón\n(n=", conteo[2,2],")"))) +
+  geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = SEXO), position = position_dodge(width = 0.9),
+             size = 3)  +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  theme(legend.title = element_text()) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \ncon linea de base no reactiva para cada momento según sexo", 
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
+                     size = 3.5) +
+  theme(plot.caption = element_text(hjust = 0))
+```
 
 ```{r, out.width="90%", fig.align="center"}
 
@@ -673,8 +835,8 @@ datos_largo1 %>% filter(!is.na(Vacuna)) %>%
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
                      breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
   scale_color_manual(values = c("forestgreen", "dodgerblue4", "darkorchid4"), name = "Vacuna",
-                     labels=c(paste0("Sinopharm\n(n=", conteo[1,2],")"),
-                              paste0("O-Astra Zeneca\n(n=", conteo[2,2],")"),
+                     labels=c(paste0("Sinopharm\n(n=", conteo[2,2],")"),
+                              paste0("O-Astra Zeneca\n(n=", conteo[1,2],")"),
                               paste0("Sputnik-V\n(n=", conteo[3,2],")"))) +
   geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = Vacuna), position = position_dodge(width = 0.9),
              size = 3)  +
@@ -692,13 +854,78 @@ datos_largo1 %>% filter(!is.na(Vacuna)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según vacuna", 
-       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
 ```
 
+```{r, out.width="90%", fig.align="center"}
 
+med <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>%
+  mutate(Vacuna = factor(Vacuna, levels = c("Sinopharm", "Oxford-Astra Zeneca", "Sputnik-V"))) %>% 
+  group_by(Vacuna, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+stat.test <- datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO", momento != "baseline") %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ SEXO, paired = F) %>% 
+  add_x_position(x = "momento", dodge = 0.9) %>% 
+  add_significance("p")
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO", momento != "baseline") %>% 
+  mutate(Vacuna = factor(Vacuna, levels = c("Sinopharm", "Oxford-Astra Zeneca", "Sputnik-V"))) %>% 
+  group_by(momento) %>% 
+  pairwise_wilcox_test(titulo ~ Vacuna, paired = F) %>% 
+  add_x_position(x = "momento", dodge = 0.9) %>% 
+  add_significance("p")
+
+stat.test <-  bind_rows(data.frame(momento = c("baseline", "baseline", "baseline"), 
+                                   .y. = c("titulo", "titulo", "titulo"), 
+                                   x = c(1,1,1), xmin = c(0.7, 0.7, 1), 
+                                   xmax = c(1, 1.3, 1.3), p.signif = c("ns", "ns", "ns")), stat.test)
+
+conteo <- datos1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% count(Vacuna)
+
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>%   
+  mutate(Vacuna = factor(Vacuna, levels = c("Sinopharm", "Oxford-Astra Zeneca", "Sputnik-V"))) %>% 
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin(aes(color = Vacuna)) +
+  geom_jitter(aes(color = Vacuna), position = position_jitterdodge(jitter.width = 0.3, 
+                                                                      jitter.height = 0.6,
+                                                                      dodge.width = 0.9), size = 2, alpha=0.3) +
+  stat_summary(aes(group = Vacuna), fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
+  scale_color_manual(values = c("forestgreen", "dodgerblue4", "darkorchid4"), name = "Vacuna",
+                     labels=c(paste0("Sinopharm\n(n=", conteo[2,2],")"),
+                              paste0("O-Astra Zeneca\n(n=", conteo[1,2],")"),
+                              paste0("Sputnik-V\n(n=", conteo[3,2],")"))) +
+  geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = Vacuna), position = position_dodge(width = 0.9),
+             size = 3)  +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  theme(legend.title = element_text()) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \ncon linea de base no reactiva para cada momento según vacuna", 
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
+                     size = 3.5) +
+  theme(plot.caption = element_text(hjust = 0))
+```
 
 ```{r, out.width="90%", fig.align="center"}
 
@@ -747,8 +974,10 @@ datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
     labels = scales::wrap_format(5)
   ) +
   labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \n para cada momento según grupo etario", 
-       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)") +
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
 ```
+
+
