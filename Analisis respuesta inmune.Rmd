@@ -538,6 +538,113 @@ datos_largo1 %>% filter(!is.na(Vacuna)) %>%
 
 ```{r, out.width="90%", fig.align="center"}
 
+med <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>%
+  group_by(Vacuna, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+conteo <- datos1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% count(Vacuna)
+
+vacuna_etiq <- c(
+                    `Oxford-Astra Zeneca` = paste0("O-Astra Zeneca\n(n = ",conteo[1,2],")"),
+                    `Sinopharm` = paste0("Sinopharm\n(n = ",conteo[2,2],")"),
+                    `Sputnik-V` = paste0("Sputnik-V\n(n = ",conteo[3,2],")")
+                    )
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% 
+  group_by(Vacuna) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) 
+
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>%   
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin() +
+  geom_jitter(aes(color = Vacuna), size = 2, width=0.1, height=0.8, alpha=0.3) +
+  stat_summary(fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred") +
+ geom_label(data = med, aes(x = momento, y = titulo, label = titulo), nudge_x = 0.05, hjust = 0, size = 3) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600)) +
+  scale_color_manual(values = c("indianred2", "seagreen3", "orange3")) +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \ncon línea de base no reactiva en los distintos momentos según vacuna aplicada", 
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  facet_grid(.~Vacuna, labeller = as_labeller(vacuna_etiq)) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
+                     tip.length = 0.01, step.increase = 0.05,
+                     size = 3) +
+  guides(color = "none")  +
+  theme(plot.caption = element_text(hjust = 0))
+```
+
+```{r, out.width="90%", fig.align="center"}
+
+med <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>%
+  group_by(Vacuna, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+conteo <- datos1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>% count(Vacuna)
+
+vacuna_etiq <- c(
+                    `Oxford-Astra Zeneca` = paste0("O-Astra Zeneca\n(n = ",conteo[1,2],")"),
+                    `Sinopharm` = paste0("Sinopharm\n(n = ",conteo[2,2],")"),
+                    `Sputnik-V` = paste0("Sputnik-V\n(n = ",conteo[3,2],")")
+                    )
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>% 
+  group_by(Vacuna) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) 
+
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>%   
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin() +
+  geom_jitter(aes(color = Vacuna), size = 2, width=0.1, height=0.8, alpha=0.3) +
+  stat_summary(fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred") +
+ geom_label(data = med, aes(x = momento, y = titulo, label = titulo), nudge_x = 0.05, hjust = 0, size = 3) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600)) +
+  scale_color_manual(values = c("indianred2", "seagreen3", "orange3")) +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Niveles de anticuerpos contra el SARS-CoV-2 de participantes \ncon línea de base reactiva en los distintos momentos según vacuna aplicada", 
+       caption = "La significancia fue estimada mediante test Pairwise Wilcoxon Rank Sum para muestras pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  facet_grid(.~Vacuna, labeller = as_labeller(vacuna_etiq)) +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y = log2(102400),
+                     tip.length = 0.01, step.increase = 0.05,
+                     size = 3) +
+  guides(color = "none")  +
+  theme(plot.caption = element_text(hjust = 0))
+```
+
+
+```{r, out.width="90%", fig.align="center"}
+
 med <- datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
   group_by(GrupoEdad, momento) %>% 
   summarise(titulo = median(titulo, na.rm = T))
@@ -925,6 +1032,7 @@ datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>%
   stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
                      size = 3.5) +
   theme(plot.caption = element_text(hjust = 0))
+
 ```
 
 ```{r, out.width="90%", fig.align="center"}
@@ -980,4 +1088,59 @@ datos_largo1 %>% filter(!is.na(GrupoEdad)) %>%
   theme(plot.caption = element_text(hjust = 0))
 ```
 
+```{r, out.width="90%", fig.align="center"}
 
+med <- datos_largo1 %>% filter(!is.na(GrupoEdad), ANT_COVID2 == "NO") %>%
+  group_by(GrupoEdad, momento) %>% 
+  summarise(titulo = median(titulo, na.rm = T))
+
+
+stat.test <- datos_largo1 %>% filter(!is.na(GrupoEdad), ANT_COVID2 == "NO", momento != "baseline") %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ GrupoEdad, paired = F) %>% 
+  add_x_position(x = "momento", dodge = 0.9) %>% 
+  add_significance("p")
+
+stat.test <-  bind_rows(data.frame(momento = "baseline", .y. = "titulo", x = 1, xmin = 0.775, xmax = 1.23, p.signif = "ns"), stat.test)
+
+
+
+conteo <- datos1 %>% filter(!is.na(GrupoEdad), ANT_COVID2 == "NO") %>% count(GrupoEdad)
+
+
+datos_largo1 %>% filter(!is.na(GrupoEdad), ANT_COVID2 == "NO") %>% 
+  ggplot(aes(x = momento, y = titulo)) +
+  geom_violin(aes(color = GrupoEdad)) +
+  geom_jitter(aes(color = GrupoEdad), position = position_jitterdodge(jitter.width = 0.3, 
+                                                                      jitter.height = 0.6,
+                                                                      dodge.width = 0.9), size = 2, alpha=0.3) +
+  stat_summary(aes(group = GrupoEdad), fun=median, 
+               fun.min = function(z) {quantile(z,0.25)},
+               fun.max = function(z) {quantile(z,0.75)},
+               geom="pointrange", color="darkred", position = position_dodge(width = 0.9)) +
+  scale_y_continuous(trans=scales::pseudo_log_trans(base = 2, sigma = 10),
+                     breaks = c(0,50,100,200,400,800,1600,3200,6400,12800, 25600, 51200, 102400, 204800, 409600), expand = expansion(mult = c(0.05, 0.15))) +
+  scale_color_manual(values = c("brown1", "dodgerblue"), name = "Grupo etario",
+                     labels=c(paste0("< 80 años\n(n=", conteo[1,2],")"),
+                              paste0(">= 80 años\n(n=", conteo[2,2],")"))) +
+  geom_label_repel(data = med, aes(x = momento, y = titulo, label = titulo, group = GrupoEdad), position = position_dodge(width = 0.9),
+             size = 3)  +
+  xlab("") + 
+  ylab("log(Título IgG)") +
+  theme_prism(
+    base_fontface = "plain", 
+    base_line_size = 0.7, 
+    base_family = "Arial", 
+    base_size = 10
+  ) +
+  theme(legend.title = element_text()) +
+  scale_x_discrete(
+    guide = guide_prism_bracket(width = 0.20), 
+    labels = scales::wrap_format(5)
+  ) +
+  labs(title = "Comparación de niveles de anticuerpos contra SARS-CoV-2 de participantes \ncon base no reactiva para cada momento según grupo etario", 
+       caption = "La significancia fue estimada mediante test Wilcoxon Rank Sum para muestras no pareadas (dos colas)\nSignificación valor p:  0 ‘****’ 0.001 ‘***’ 0.01 ‘**’ 0.05 ‘*’ 0.1 ‘ns’ 1") +
+  stat_pvalue_manual(stat.test, label = "p.signif", xmin = "xmin", xmax = "xmax", y =log2(102400), tip.length = 0.01, step.increase = 0.05,
+                     size = 3.5) +
+  theme(plot.caption = element_text(hjust = 0))
+```
