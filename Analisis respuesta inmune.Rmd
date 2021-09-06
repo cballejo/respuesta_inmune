@@ -27,7 +27,7 @@ library(tidyverse)
 ```
 
 ```{r, lectura y gestion de variables}
-datos <- read_excel("Relevamiento de datos.xlsx", sheet = 2, col_types = c(rep("guess",11), "date", rep("guess", 19), "date", rep("guess", 12)))
+datos <- read_excel("Relevamiento de datos.xlsx", sheet = 2, col_types = c(rep("guess",11), "date", rep("guess", 19), "date", rep("guess", 12))) %>% filter(!is.na(Id))
 
 datos <- datos %>% mutate(Lugar = if_else(str_detect(Id, pattern = "^A"), "MDP", "LA PLATA/LANUS"),
                   Edad_calculada = if_else(Lugar == "MDP", interval(Fecha_nacimiento, Fecha_muestra_0)%/%dyears(),Edad),
