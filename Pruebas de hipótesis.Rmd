@@ -1,0 +1,348 @@
+---
+title: "Pruebas de hipótesis"
+author: "Christian Ballejo"
+date: "6/12/2021"
+output: html_document
+---
+
+```{r, echo=F, message=F, warning=F}
+
+library(readxl)
+library(lubridate)
+library(dlookr)
+library(rstatix)
+library(janitor)
+library(kableExtra)
+library(gtsummary)
+library(tidyverse)
+
+datos <- read_excel("Relevamiento de datos.xlsx", sheet = 2, col_types = c(rep("guess",11), "date", rep("guess", 19), "date", rep("guess", 12))) %>% filter(!is.na(Id))
+
+datos <- datos %>% mutate(Lugar = if_else(str_detect(Id, pattern = "^A"), "MDP", "LA PLATA/LANUS"),
+                          Edad_calculada = if_else(Lugar == "MDP", interval(Fecha_nacimiento, Fecha_muestra_0)%/%dyears(),Edad),
+                          baseline = case_when(
+                            Título_0 == "NR" ~ 0,
+                            str_detect(string = Título_0,  "/") ~ as.numeric(str_sub(string = Título_0, start = str_locate(Título_0, "/")[,2]+1, end = nchar(Título_0))) 
+                          ),
+                          after_dosis1 = case_when(
+                            Titulo_21 == "NR" ~ 0,
+                            str_detect(string = Titulo_21,  "/") ~ as.numeric(str_sub(string = Titulo_21, start = str_locate(Titulo_21, "/")[,2]+1, end = nchar(Titulo_21))) 
+                          ),
+                          after_dosis2 = case_when(
+                            Titulo_42 == "NR" ~ 0,
+                            str_detect(string = Titulo_42,  "/") ~ as.numeric(str_sub(string = Titulo_42, start = str_locate(Titulo_42, "/")[,2]+1, end = nchar(Titulo_42))) 
+                          ),
+                          tiempo1 = interval(Fecha_muestra_0, Fecha_muestra_21)%/%ddays(),
+                          tiempo2 =  interval(Fecha_muestra_21, Fecha_muestra_42)%/%ddays(),
+                          GrupoEdad = if_else(Edad_calculada < 80, "< 80 años", ">= 80 años"),
+                          ANT_COVID = str_to_upper(ANT_COVID),
+                          Vacuna = if_else(Vacuna == "Sputnik V", "Sputnik-V", Vacuna))
+
+datos <- datos %>% dplyr::select(Id, HOGAR, Lugar, SEXO, Edad_calculada, GrupoEdad, Vacuna, ANT_COVID,
+                                 FECHA_HISOPADO, Tipo_diagnostico, COVID_durante_estudi, OBITO, Fecha_obito,
+                                 Fecha_1r_dosis, Fecha_2da_dosis, Fecha_muestra_0, baseline,
+                                 Fecha_muestra_21, after_dosis1, Fecha_muestra_42, after_dosis2,
+                                 Motivo_fin_seguimiento)   
+
+
+datos_largo <- datos %>% dplyr::select(Id, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
+  pivot_longer(cols = c("baseline", starts_with("after")), names_to = "momento", values_to = "titulo") %>% 
+  mutate(titulo_cuali = if_else(titulo == 0, "NR", "R"),
+         momento = factor(momento, levels = c("baseline", "after_dosis1", "after_dosis2")))
+
+excluir <- datos_largo %>% filter(is.na(titulo)) %>% dplyr::select(Id)
+
+datos1 <- datos %>% anti_join(excluir) %>% 
+  mutate(ANT_COVID2 = if_else(ANT_COVID == "NO" & baseline > 0, "SI", ANT_COVID))
+
+datos_largo1 <- datos1 %>% dplyr::select(Id, Lugar, SEXO, Edad_calculada, Vacuna, ANT_COVID, ANT_COVID2, GrupoEdad, baseline, after_dosis1, after_dosis2) %>% 
+  pivot_longer(cols = c("baseline", starts_with("after")), names_to = "momento", values_to = "titulo") %>% 
+  mutate(titulo_cuali = if_else(titulo == 0, "NR", "R"),
+         momento = factor(momento, levels = c("baseline", "after_dosis1", "after_dosis2")))
+
+datos_largo1 <- datos_largo1 %>% mutate(ID = factor(Id), 
+                                        momento = factor(momento)) %>% select(-Id)
+
+datos_largo1 <- as.data.frame(datos_largo1) %>% arrange(momento, ID) 
+
+datos_largo1 <- datos_largo1 %>% 
+  mutate( Vacuna = factor(Vacuna, levels = c("Sputnik-V", "Sinopharm", "Oxford-Astra Zeneca")))
+
+```
+## Pairwise Wilcox test para observaciones pareadas
+
+### Vacunas
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(Vacuna) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(Vacuna) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+### Sexo
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(SEXO) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(SEXO) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+### Grupo etario
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "NO") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(GrupoEdad) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  
+  mutate(p.adj = format(p.adj, digits=3)) %>% 
+  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(Vacuna), ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(GrupoEdad) %>% 
+  pairwise_wilcox_test(titulo ~ momento, paired = T) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+--------------------------------------
+
+## Mann-Whitney test 
+
+### Vacunas
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(ANT_COVID2 == "NO", momento != "baseline") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ Vacuna, paired = F) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+
+```{r, echo=F}
+datos_largo1 %>% filter(ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ Vacuna, paired = F) %>% 
+  select(-.y., -statistic, -p, -p.adj.signif) %>%  kable() %>% 
+  kable_styling() 
+```
+
+### Sexo
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO",  momento != "baseline") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ SEXO, paired = F) %>% 
+  select(-.y., -statistic) %>%  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ SEXO, paired = F) %>% 
+  select(-.y., -statistic) %>%  kable() %>% 
+  kable_styling() 
+```
+
+### Grupo etario
+
+#### Grupo sin antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "NO",  momento != "baseline") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ GrupoEdad, paired = F) %>% 
+  select(-.y., -statistic) %>%  kable() %>% 
+  kable_styling() 
+```
+
+#### Grupo con antecedente de Covid
+
+```{r, echo=F}
+datos_largo1 %>% filter(!is.na(SEXO), ANT_COVID2 == "SI") %>% 
+  mutate(momento = case_when(
+    momento == "baseline" ~ "Baseline",
+    momento == "after_dosis1" ~ "21 days \n post dose 1",
+    momento == "after_dosis2" ~ "21 days \n post dose 2",
+  ),
+  momento = factor(momento, levels = c("Baseline", 
+                                       "21 days \n post dose 1", 
+                                       "21 days \n post dose 2"))) %>% 
+  group_by(momento) %>% 
+  wilcox_test(titulo ~ GrupoEdad, paired = F) %>% 
+  select(-.y., -statistic) %>%  kable() %>% 
+  kable_styling() 
+```
+
+--------------------------------------
+
+```{r, echo=F, warning=F, message=F}
+theme_gtsummary_language(language = "es", decimal.mark = ",") 
+theme_gtsummary_compact()
+
+datos1 %>% mutate(SEXO = case_when(
+  SEXO == "Masculino" ~ "Varón",
+  SEXO == "Femenino" ~ "Mujer"
+),
+Vacuna = case_when(
+  Vacuna == "Oxford-Astra Zeneca" ~ "AZD1222",
+  Vacuna == "Sinopharm" ~ "COVID-19 BIBP",
+   Vacuna == "Sputnik-V" ~ "Sputnik V"
+),
+Lugar = case_when(
+  Lugar == "MDP" ~ "MDP-Batán",
+  Lugar == "LA PLATA/LANUS" ~ "La Plata / Lanús"
+)) %>% 
+  rename(UGL = "Lugar") %>% 
+  tbl_summary(by = ANT_COVID2, 
+                       missing = "no",
+                       label = list(Edad_calculada ~ "Edad",
+                                    GrupoEdad ~ "Edad (agrupada)",
+                                    ANT_COVID ~ "Antecedente de Covid-19 \n (Autoreferido)"),
+                       include = c(SEXO, Edad_calculada, GrupoEdad, Vacuna, ANT_COVID, UGL), digits = list(all_continuous() ~ c(0,1), all_categorical() ~ c(0,1))
+                        ) %>% 
+  modify_header(label ~ "**Variable**") %>%
+  modify_spanning_header(c("stat_1", "stat_2") ~ "Antecedentes de Covid-19 \n (según linea basal)") %>%
+  add_n() %>% 
+ # add_p(pvalue_fun = ~style_pvalue(.x, digits = 2)) %>% 
+  bold_labels() %>% 
+  #as_gt %>% 
+  #gt::cols_align(align = "right", columns = vars("stat_1", "stat_2")) %>% 
+  as_flex_table() %>% 
+  flextable::align(j = 3:4,align = "right") %>% 
+  flextable::autofit()
+```
+
